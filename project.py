@@ -1,3 +1,14 @@
+# Applied Cryptography Final Project Fall 2023
+# Authors: Derek Hopkins, Jacob Nevin, Ethan Conner
+# This program uses Elliptic Curve Diffie-Hellman for session key distribution (authorization)
+# AES-256 in CBC Mode is used for confidentiality
+# SHA-256 is used for authentication
+
+# Required Packages:
+# tinyec
+# pycryptodome
+
+import binascii
 from tinyec import registry
 import secrets
 import hashlib
@@ -6,7 +17,9 @@ from Crypto import Random
 import base64
 
 def compress(pubKey):
-    return hex(pubKey.x) + hex(pubKey.y % 2)[2:]
+    compressedKey = hex(pubKey.x) + hex(pubKey.y % 2)[2:]
+    # print(compressedKey)
+    return compressedKey
 
 def ecdhKeyExchange():
 
@@ -19,7 +32,7 @@ def ecdhKeyExchange():
     bobPubKey = bobPrivKey * curve.g
     print("Bob public key:", compress(bobPubKey))
 
-    print("\nNow exchange the public keys (e.g. through Internet)\n")
+    print("\nPublic keys can now be exchanged insecurely :)\n")
 
     aliceSharedKey = alicePrivKey * bobPubKey
     print("Alice shared key:", compress(aliceSharedKey))
@@ -31,9 +44,18 @@ def ecdhKeyExchange():
 
     b64SessionKey = base64.b64encode(compress(aliceSharedKey).encode('utf-8'))
 
+    # print(compress(aliceSharedKey).encode('utf-8'))
+
     print("Session Key in Base64 Encoding: \n", b64SessionKey)
 
-    return b64SessionKey
+    # print(b64SessionKey.len())
+
+    sesKeyTransform = compress(aliceSharedKey)
+    sesKeyTransform = sesKeyTransform[2:]
+    sesKeyTransform = sesKeyTransform[:-1]
+    print("Transformed Key: ", sesKeyTransform)
+
+    return binascii.unhexlify(sesKeyTransform)
 
 def pkcs7padding(data, block_size=16):
   if type(data) != bytearray and type(data) != bytes:
@@ -42,9 +64,13 @@ def pkcs7padding(data, block_size=16):
   return data + bytearray([pl for i in range(pl)])
 
 
-def encrypt(pTextMsg, key):
+def encrypt(pTextMsg, sesKey):
 
     # AES-256 in CBC Mode using session-key as encryption key
+
+    iv = Random.new().read(AES.block_size)
+    
+    print(iv)
 
     byteString = pTextMsg.encode('utf-8')
 
@@ -55,10 +81,14 @@ def encrypt(pTextMsg, key):
     print("Raw Text: ", pTextMsg)
     print("Padded Text: ", paddedMsg)
 
-    cTextMsg = pTextMsg
-    return cTextMsg
+    cipher = AES.new(sesKey, AES.MODE_CBC, iv)
 
-def decrypt(cTextMsg, key):
+    return {
+       'cipher_text': base64.b64encode(cipher.encrypt(paddedMsg)),
+       'iv': base64.b64encode(iv)
+    }
+
+def decrypt(cTextMsg, sesKey):
 
     pTextMsg = cTextMsg
     return pTextMsg
@@ -74,7 +104,9 @@ pTextMsg = input("Enter a message: ")
 
 sessionKey = ecdhKeyExchange()
 
-encrypt(pTextMsg, sessionKey)
+print("Key used for encryption: ", sessionKey)
+
+print(encrypt(pTextMsg, sessionKey))
 
 # hashedPlaintext = hashMsg(pTextMsg)
 
