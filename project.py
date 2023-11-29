@@ -18,7 +18,6 @@ import base64
 
 def compress(pubKey):
     compressedKey = hex(pubKey.x) + hex(pubKey.y % 2)[2:]
-    # print(compressedKey)
     return compressedKey
 
 def ecdhKeyExchange():
@@ -41,17 +40,9 @@ def ecdhKeyExchange():
     print("Bob shared key:", compress(bobSharedKey))
 
     print("Equal shared keys:", aliceSharedKey == bobSharedKey)
-
-    b64SessionKey = base64.b64encode(compress(aliceSharedKey).encode('utf-8'))
-
-    # print(compress(aliceSharedKey).encode('utf-8'))
-
-    # print("Session Key in Base64 Encoding: \n", b64SessionKey)
-
-    # print(b64SessionKey.len())
     
     sesKeyTransform = compress(aliceSharedKey)
-    # print(len(sesKeyTransform))
+   
     sesKeyTransform = sesKeyTransform[2:]
     if(len(sesKeyTransform) % 2 == 1):
         sesKeyTransform = sesKeyTransform[:-1]
@@ -66,6 +57,13 @@ def pkcs7padding(data, block_size=16):
   pl = block_size - (len(data) % block_size)
   return data + bytearray([pl for i in range(pl)])
 
+# Padding function
+
+def padWithSpaces(data, block_size=16):
+    remainder = len(data) % block_size
+    padding_needed = block_size - remainder
+    return data + padding_needed * ' '
+
 
 def encrypt(pTextMsg, sesKey):
 
@@ -73,23 +71,19 @@ def encrypt(pTextMsg, sesKey):
 
     iv = Random.new().read(AES.block_size)
     
-    # print(iv)
+    paddedBString = padWithSpaces(pTextMsg)
 
-    byteString = pTextMsg.encode('utf-8')
-
-    paddedBString = pkcs7padding(byteString)
-
-    # paddedMsg = paddedString.decode('utf-8')
+    byteString = paddedBString.encode('utf-8')
 
     print("Raw Text: ", pTextMsg, "\n")
-    print("Padded Text: ", paddedBString, "\n")
+    print("Padded Text: ", byteString, "\n")
 
     cipher = AES.new(sesKey, AES.MODE_CBC, iv)
 
-    cText = cipher.encrypt(paddedBString)
+    cText = cipher.encrypt(byteString)
 
     return {
-       'cipher_text': base64.b64encode(cipher.encrypt(paddedBString)),
+       'cipher_text': base64.b64encode(cText),
        'iv': base64.b64encode(iv)
     }
 
@@ -104,13 +98,10 @@ def decrypt(encryption_dict, sesKey):
 
     pTextMsg = decryption.decode('utf-8')
 
-    pTextMsg = hex(pTextMsg)
-
-    # pTextMsg = decryption.decode('utf-8')
-
-    # pTextMsg = pTextMsg.rstrip()
+    pTextMsg = pTextMsg.rstrip()
 
     return pTextMsg
+   
 
 def hashMsg(string):
     h = hashlib.sha256()
