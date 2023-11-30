@@ -13,7 +13,7 @@ from tinyec import registry
 import secrets
 import hashlib
 from Crypto.Cipher import AES
-from Crypto import Random
+from Crypto.Util import Padding
 import base64
 
 def compress(pubKey):
@@ -51,36 +51,55 @@ def ecdhKeyExchange():
     
     return binascii.unhexlify(sesKeyTransform)
 
-def pkcs7padding(data, block_size=16):
-  if type(data) != bytearray and type(data) != bytes:
-    raise TypeError("Only support bytearray/bytes !")
-  pl = block_size - (len(data) % block_size)
-  return data + bytearray([pl for i in range(pl)])
+def initialVectorExchange():
+    
+    curve = registry.get_curve('secp256r1')
+    alicePrivIV = secrets.randbelow(curve.field.n)
+    alicePubIV = alicePrivIV * curve.g
+    print("Alice public IV:", compress(alicePubIV))
 
-# Padding function
+    bobPrivIV = secrets.randbelow(curve.field.n)
+    bobPubIV = bobPrivIV * curve.g
+    print("Bob public IV:", compress(bobPubIV))
 
-def padWithSpaces(data, block_size=16):
-    remainder = len(data) % block_size
-    padding_needed = block_size - remainder
-    return data + padding_needed * ' '
+    print("\nPublic IVs can now be exchanged insecurely :)\n")
+
+    aliceSharedIV = alicePrivIV * bobPubIV
+    print("Alice shared IV:", compress(aliceSharedIV))
+
+    bobSharedIV = bobPrivIV * alicePubIV
+    print("Bob shared IV:", compress(bobSharedIV))
+
+    print("Equal shared IVs:", aliceSharedIV == bobSharedIV)
+    
+    sesIVTransform = compress(aliceSharedIV)
+   
+    sesIVTransform = sesIVTransform[2:]
+    if(len(sesIVTransform) % 2 == 1):
+        sesIVTransform = sesIVTransform[:-1]
+    # makes it a 16 byte IV
+    sesIVTransform = sesIVTransform[:len(sesIVTransform)//2]
+    print("\nTransformed IV: ", sesIVTransform, "\n")
+    
+    return binascii.unhexlify(sesIVTransform)
 
 
 def encrypt(pTextMsg, sesKey):
 
     # AES-256 in CBC Mode using session-key as encryption key
-
-    iv = Random.new().read(AES.block_size)
     
-    paddedBString = padWithSpaces(pTextMsg)
+    iv = sharedIV
 
-    byteString = paddedBString.encode('utf-8')
+    byteString = pTextMsg.encode('utf-8')
+
+    paddedBString = Padding.pad(byteString, 16, 'pkcs7')
 
     print("Raw Text: ", pTextMsg, "\n")
-    print("Padded Text: ", byteString, "\n")
+    print("Padded Text: ", paddedBString, "\n")
 
     cipher = AES.new(sesKey, AES.MODE_CBC, iv)
 
-    cText = cipher.encrypt(byteString)
+    cText = cipher.encrypt(paddedBString)
 
     return {
        'cipher_text': base64.b64encode(cText),
@@ -90,15 +109,16 @@ def encrypt(pTextMsg, sesKey):
 def decrypt(encryption_dict, sesKey):
 
     cText = base64.b64decode(encryption_dict['cipher_text'])
-    iv = base64.b64decode(encryption_dict['iv'])
+
+    iv = sharedIV
 
     cipher = AES.new(sesKey, AES.MODE_CBC, iv)
 
     decryption = cipher.decrypt(cText)
 
-    pTextMsg = decryption.decode('utf-8')
+    pTextMsg = Padding.unpad(decryption, 16, 'pkcs7')
 
-    pTextMsg = pTextMsg.rstrip()
+    pTextMsg = pTextMsg.decode('utf-8')
 
     return pTextMsg
    
@@ -110,11 +130,16 @@ def hashMsg(string):
     hashedMsg = h.digest()
     return hashedMsg
 
+
 pTextMsg = input("Enter a message: ")
 
 sessionKey = ecdhKeyExchange()
 
-# print("Key used for encryption: ", sessionKey, "\n")
+sharedIV = initialVectorExchange()
+
+hashedPlaintext = hashMsg(pTextMsg)
+
+print("Hashed Plaintext: ", hashedPlaintext,"\n")
 
 enc_dict = encrypt(pTextMsg, sessionKey)
 
@@ -122,14 +147,12 @@ cipherText = base64.b64decode(enc_dict['cipher_text'])
 
 print("Cipher Text ==> ", cipherText, "\n")
 
-print("Decrypted Cipher ==> ", decrypt(enc_dict, sessionKey), "\n")
+decryptedCipherText = decrypt(enc_dict, sessionKey)
 
-# hashedPlaintext = hashMsg(pTextMsg)
+print("Decrypted Cipher Text ==> ", decryptedCipherText, "\n")
 
-# print("Hashed Plaintext: ", hashedPlaintext)
+hashedDecryption = hashMsg(decryptedCipherText)
 
-# cipherText = encrypt(pTextMsg)
+print("Hashed decryption: ", hashedDecryption, "\n")
 
-# print(cipherText)
-
-# print(decrypt(cipherText))
+print("Data Intact: ", hashedDecryption == hashedPlaintext)
